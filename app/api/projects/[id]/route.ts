@@ -52,7 +52,7 @@ export async function PATCH(
         }
 
         const body = await req.json();
-        const { name, description, canvasData } = body;
+        const { name, description, canvasData, supabaseConfig, customApiConfig } = body;
 
         const project = await prisma.project.update({
             where: {
@@ -62,7 +62,9 @@ export async function PATCH(
             data: {
                 name,
                 description,
-                canvasData
+                canvasData,
+                supabaseConfig,
+                customApiConfig
             },
         });
 

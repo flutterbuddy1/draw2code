@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+
 import { generateAppCode } from '@/lib/ai-generator';
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/auth';
@@ -11,7 +12,7 @@ export async function POST(req: Request) {
 
     try {
         const body = await req.json();
-        const { projectId, canvasData, prompt, framework, language } = body;
+        const { projectId, canvasData, prompt, framework, language, supabaseConfig, customApiConfig } = body;
 
         if (!projectId) {
             return NextResponse.json({ error: 'Project ID is required' }, { status: 400 });
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
         });
 
         // Generate code
-        const code = await generateAppCode(prompt, canvasData, framework, language);
+        const code = await generateAppCode(prompt, canvasData, framework, language, supabaseConfig, customApiConfig);
 
         // Save generated code
         const savedCode = await prisma.generatedCode.create({

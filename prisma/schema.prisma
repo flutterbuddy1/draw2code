@@ -32,6 +32,8 @@ model Project {
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   status        String         @default("DRAFT") // DRAFT, GENERATING, READY
   canvasData    String?        @db.LongText // Stores the tldraw canvas snapshot as a JSON string
+  supabaseConfig  String?      @db.Text // JSON: { enabled: boolean, url: string, key: string, features: string[] }
+  customApiConfig String?      @db.Text // JSON: { endpoints: [{ url: string, method: string, desc: string }] }
   generatedCodes GeneratedCode[]
 }
 
