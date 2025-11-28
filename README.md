@@ -1,36 +1,56 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AppSketch Studio
+
+AppSketch Studio is a web application that allows users to draw, describe, and generate app UIs and code using AI.
+
+## Features
+
+- **Draw Your App**: Sketch wireframes on an infinite canvas.
+- **AI-Powered Coding**: Convert sketches and text prompts into React/Tailwind code.
+- **Multilingual Support**: Generate apps in multiple languages.
+- **Voice Commands**: Describe your app verbally.
+
+## Tech Stack
+
+- **Frontend**: Next.js (App Router), React, Tailwind CSS, Lucide Icons
+- **Backend**: Next.js API Routes
+- **Database**: SQLite (Prisma ORM)
+- **Auth**: NextAuth.js (Credentials)
+- **Canvas**: tldraw
 
 ## Getting Started
 
-First, run the development server:
+1.  **Install dependencies**:
+    ```bash
+    pnpm install
+    ```
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+2.  **Set up environment variables**:
+    Copy `.env.example` to `.env` (already done in setup).
+    ```bash
+    cp .env.example .env
+    ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+3.  **Initialize Database**:
+    ```bash
+    npx prisma db push
+    ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+4.  **Run Development Server**:
+    ```bash
+    npm run dev
+    ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Project Structure
 
-## Learn More
+- `app/`: Next.js pages and API routes.
+- `components/`: Reusable UI components.
+- `lib/`: Utilities and services (Prisma, AI mock).
+- `prisma/`: Database schema.
 
-To learn more about Next.js, take a look at the following resources:
+## Usage
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1.  Sign up/Log in (use any email/password for mock auth if configured, or check `auth.ts`).
+2.  Create a new project from the dashboard.
+3.  Use the canvas to draw your app layout.
+4.  Describe the app in the text area or use voice input.
+5.  Click "Generate App" to see the AI-generated code.
