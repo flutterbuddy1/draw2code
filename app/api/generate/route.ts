@@ -44,8 +44,7 @@ export async function POST(req: Request) {
         });
 
         return NextResponse.json({ success: true, code: savedCode });
-    } catch (error) {
-        console.error('Generation error:', error);
+    } catch {
         return NextResponse.json({ error: 'Failed to generate app' }, { status: 500 });
     }
 }

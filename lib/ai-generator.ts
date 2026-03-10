@@ -2,13 +2,29 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+export interface SupabaseConfig {
+  enabled: boolean;
+  url: string;
+  key: string;
+}
+
+export interface ApiEndpoint {
+  method: string;
+  url: string;
+  desc: string;
+}
+
+export interface CustomApiConfig {
+  endpoints: ApiEndpoint[];
+}
+
 export async function generateAppCode(
   prompt: string,
-  canvasData: any,
+  canvasData: unknown,
   framework: string = 'react',
   language: string = 'english',
-  supabaseConfig?: any,
-  customApiConfig?: any
+  supabaseConfig?: SupabaseConfig,
+  customApiConfig?: CustomApiConfig
 ) {
   console.log('Generating app with Gemini:', { prompt, framework, language });
 
@@ -47,12 +63,12 @@ export async function generateAppCode(
     - Implement the requested features using this client (e.g., auth, database queries).
     ` : ''}
 
-    ${customApiConfig?.endpoints?.length > 0 ? `
+    ${customApiConfig?.endpoints && customApiConfig.endpoints.length > 0 ? `
     IMPORTANT: USE CUSTOM API ENDPOINTS
     - The user has provided specific API endpoints to use.
     - Do NOT mock data if a relevant endpoint is available.
     - Available Endpoints:
-    ${customApiConfig.endpoints.map((e: any) => `- ${e.method} ${e.url}: ${e.desc}`).join('\n')}
+    ${customApiConfig.endpoints.map((e: ApiEndpoint) => `- ${e.method} ${e.url}: ${e.desc}`).join('\n')}
     ` : ''}
   `;
 

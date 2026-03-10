@@ -54,6 +54,24 @@ export class PreviewShapeUtil extends BaseBoxShapeUtil<PreviewShape> {
             });
         };
 
+        const handleDownload = (e: React.MouseEvent) => {
+            e.stopPropagation();
+            e.preventDefault();
+
+            if (shape.props.codeId) {
+                window.open(`/api/export?id=${shape.props.codeId}`, '_blank');
+            } else {
+                // Fallback: create a blob locally
+                const blob = new Blob([shape.props.html], { type: 'text/html' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'generated-app.html';
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+        };
+
         const handleOpenInNewTab = (e: React.MouseEvent) => {
             e.stopPropagation();
             e.preventDefault();
@@ -130,6 +148,30 @@ export class PreviewShapeUtil extends BaseBoxShapeUtil<PreviewShape> {
                         >
                             <span>📋</span>
                             <span>Copy</span>
+                        </button>
+                        <button
+                            onPointerDown={handleDownload}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            style={{
+                                padding: '5px 10px',
+                                fontSize: '11px',
+                                background: 'rgba(255,255,255,0.2)',
+                                border: 'none',
+                                borderRadius: '4px',
+                                color: 'white',
+                                cursor: 'pointer',
+                                fontWeight: '500',
+                                transition: 'background 0.2s',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                            title="Download code as HTML"
+                        >
+                            <span>📥</span>
+                            <span>Download</span>
                         </button>
                         <button
                             onPointerDown={handleOpenInNewTab}

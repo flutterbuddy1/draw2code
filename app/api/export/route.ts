@@ -12,15 +12,24 @@ export async function GET(req: Request) {
 
         const generatedCode = await prisma.generatedCode.findUnique({
             where: { id },
-            select: { code: true }
+            select: { code: true, language: true, framework: true }
         });
 
         if (!generatedCode) {
             return NextResponse.json({ error: 'Code not found' }, { status: 404 });
         }
 
-        return NextResponse.json({ code: generatedCode.code });
-    } catch {
-        return NextResponse.json({ error: 'Failed to fetch code' }, { status: 500 });
+        // Return as a downloadable file
+        const filename = `app-${id.substring(0, 8)}.html`;
+
+        return new NextResponse(generatedCode.code, {
+            headers: {
+                'Content-Type': 'text/html',
+                'Content-Disposition': `attachment; filename="${filename}"`,
+            },
+        });
+    } catch (error) {
+        console.error('Export error:', error);
+        return NextResponse.json({ error: 'Failed to export code' }, { status: 500 });
     }
 }

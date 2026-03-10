@@ -10,18 +10,23 @@ export async function POST(req: Request) {
 
     try {
         const body = await req.json();
-        const { name, description } = body;
+        const { name, description } = body as { name: string; description?: string };
+
+        const userId = session.user.id;
+        if (!userId) {
+            return NextResponse.json({ error: 'User ID missing' }, { status: 400 });
+        }
 
         const project = await prisma.project.create({
             data: {
                 name,
                 description,
-                userId: session.user.id
+                userId
             }
         });
 
         return NextResponse.json(project);
-    } catch (error) {
+    } catch {
         return NextResponse.json({ error: 'Failed to create project' }, { status: 500 });
     }
 }

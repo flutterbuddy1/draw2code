@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createProject } from '@/app/actions'; // We need to create this
+
 
 export default function NewProjectPage() {
     const [name, setName] = useState('');

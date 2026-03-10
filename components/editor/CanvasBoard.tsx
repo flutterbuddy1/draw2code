@@ -2,55 +2,91 @@
 
 import { Tldraw, Editor, createShapeId } from 'tldraw'
 import 'tldraw/tldraw.css'
-import { useCallback, forwardRef, useImperativeHandle, useRef, useEffect } from 'react'
+import { useCallback, forwardRef, useImperativeHandle, useRef, useEffect, useState } from 'react'
 import { PreviewShapeUtil, PreviewShape } from './PreviewShape'
 
 interface CanvasBoardProps {
-    onSave: (data: any) => void;
-    initialData?: any;
+    onSave: (data: unknown) => void;
+    initialData?: unknown;
 }
 
 export interface CanvasBoardRef {
-    getCanvasData: () => any;
+    getCanvasData: () => unknown;
     getEditor: () => Editor | null;
     addPreviewShape: (html: string, codeId?: string) => void;
-    getSelectedShapes: () => any;
+    getSelectedShapes: () => unknown;
 }
 
 const customShapeUtils = [PreviewShapeUtil]
 
 const CanvasBoard = forwardRef<CanvasBoardRef, CanvasBoardProps>(({ onSave, initialData }, ref) => {
     const editorRef = useRef<Editor | null>(null);
+    const [isEditorReady, setIsEditorReady] = useState(false);
+    const hasLoadedRef = useRef(false);
 
     const handleMount = useCallback((editor: Editor) => {
         editorRef.current = editor;
+        setIsEditorReady(true);
 
-        if (initialData) {
-            editor.loadSnapshot(initialData)
+        // Try to load initial data immediately on mount if available
+        if (initialData && !hasLoadedRef.current) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                editor.store.loadSnapshot(initialData as any);
+                hasLoadedRef.current = true;
+                console.log('Snapshot loaded on mount');
+            } catch (err) {
+                console.error('Failed to load snapshot on mount:', err);
+            }
         }
+    }, [initialData]);
 
-        // Debounce save
-        let timeout: NodeJS.Timeout;
-        editor.on('change', () => {
-            const snapshot = editor.getSnapshot();
-            clearTimeout(timeout);
-            timeout = setTimeout(() => {
-                onSave(snapshot);
-            }, 1000); // Save after 1 second of inactivity
-        });
-    }, [onSave]); // Removed initialData from dependency to avoid re-binding
-
-    // Load initial data when it becomes available (e.g. after fetch)
+    // Setup auto-save listener
     useEffect(() => {
-        if (editorRef.current && initialData) {
-            editorRef.current.loadSnapshot(initialData);
+        const editor = editorRef.current;
+        if (!editor || !isEditorReady) return;
+
+        let timeout: NodeJS.Timeout;
+        const unlisten = editor.on('change', (event) => {
+            // Only trigger save if the change was made by the user, not by the store loading
+            if (event.source === 'user') {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => {
+                    if (hasLoadedRef.current) {
+                        const snapshot = editor.store.getSnapshot();
+                        onSave(snapshot);
+                    }
+                }, 1500); // 1.5s debounce for stability
+            }
+        });
+
+        return () => {
+            if (typeof unlisten === 'function') {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (unlisten as any)();
+            }
+            clearTimeout(timeout);
+        };
+    }, [onSave, isEditorReady]);
+
+    // Handle late-arriving initial data or updates
+    useEffect(() => {
+        if (editorRef.current && initialData && !hasLoadedRef.current) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                editorRef.current.store.loadSnapshot(initialData as any);
+                hasLoadedRef.current = true;
+                console.log('Snapshot loaded via useEffect');
+            } catch (err) {
+                console.error('Failed to load snapshot in useEffect:', err);
+            }
         }
     }, [initialData]);
 
     useImperativeHandle(ref, () => ({
         getCanvasData: () => {
             if (!editorRef.current) return null;
-            return editorRef.current.getSnapshot();
+            return editorRef.current.store.getSnapshot();
         },
         getEditor: () => editorRef.current,
         getSelectedShapes: () => {
@@ -60,28 +96,24 @@ const CanvasBoard = forwardRef<CanvasBoardRef, CanvasBoardProps>(({ onSave, init
             const selectedShapeIds = editor.getSelectedShapeIds();
 
             if (selectedShapeIds.length === 0) {
-                // If nothing is selected, return all shapes
                 return editor.getCurrentPageShapes();
             }
 
-            // Return only selected shapes
             const selectedShapes = selectedShapeIds.map(id => editor.getShape(id));
-            return selectedShapes.filter(shape => shape !== undefined);
+            return selectedShapes.filter((shape): shape is Exclude<typeof shape, undefined> => shape !== undefined);
         },
         addPreviewShape: (html: string, codeId?: string) => {
             if (!editorRef.current) return;
 
             const editor = editorRef.current;
             const id = createShapeId();
-
-            // Get viewport center
             const { x, y } = editor.getViewportScreenCenter();
 
             editor.createShape<PreviewShape>({
                 id,
                 type: 'preview',
-                x: x - 300, // Center the shape (600px wide / 2)
-                y: y - 300, // Center the shape (600px tall / 2)
+                x: x - 300,
+                y: y - 300,
                 props: {
                     w: 600,
                     h: 600,
@@ -90,17 +122,25 @@ const CanvasBoard = forwardRef<CanvasBoardRef, CanvasBoardProps>(({ onSave, init
                 },
             });
 
-            // Select the newly created shape
             editor.select(id);
         }
     }));
 
     return (
-        <div className="w-full h-full relative">
+        <div className="w-full h-full relative tldraw-custom-theme">
             <Tldraw
                 onMount={handleMount}
                 shapeUtils={customShapeUtils}
+                inferDarkMode={true}
             />
+            <style jsx global>{`
+                .tldraw-custom-theme .tl-ui-layout {
+                    z-index: 10;
+                }
+                .tldraw-custom-theme .tl-canvas {
+                    background-color: var(--background);
+                }
+            `}</style>
         </div>
     )
 });

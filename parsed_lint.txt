@@ -1,0 +1,23 @@
+D:\A1\SketchToDraw\my-app\app\login\page.tsx
+  7:31 @typescript-eslint/no-unused-vars 'ChevronRight' is defined but never used.
+D:\A1\SketchToDraw\my-app\app\page.tsx
+  2:22 @typescript-eslint/no-unused-vars 'PenTool' is defined but never used.
+  2:31 @typescript-eslint/no-unused-vars 'Code' is defined but never used.
+  2:37 @typescript-eslint/no-unused-vars 'Globe' is defined but never used.
+D:\A1\SketchToDraw\my-app\app\preview\page.tsx
+  67:92 react/no-unescaped-entities `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`.
+D:\A1\SketchToDraw\my-app\app\project\[id]\page.tsx
+  301:66 @typescript-eslint/no-explicit-any Unexpected any. Specify a different type.
+  308:66 @typescript-eslint/no-explicit-any Unexpected any. Specify a different type.
+  438:62 @typescript-eslint/no-unused-vars 'e' is defined but never used.
+D:\A1\SketchToDraw\my-app\app\project\new\page.tsx
+  5:10 @typescript-eslint/no-unused-vars 'createProject' is defined but never used.
+D:\A1\SketchToDraw\my-app\app\signup\page.tsx
+  6:37 @typescript-eslint/no-unused-vars 'Sparkles' is defined but never used.
+  6:47 @typescript-eslint/no-unused-vars 'ChevronRight' is defined but never used.
+D:\A1\SketchToDraw\my-app\components\editor\CanvasBoard.tsx
+  103:60 @typescript-eslint/no-explicit-any Unexpected any. Specify a different type.
+D:\A1\SketchToDraw\my-app\components\editor\ChatSidebar.tsx
+  4:24 @typescript-eslint/no-unused-vars 'User' is defined but never used.
+D:\A1\SketchToDraw\my-app\parse_lint.js
+  1:12 @typescript-eslint/no-require-imports A `require()` style import is forbidden.

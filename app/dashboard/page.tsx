@@ -3,6 +3,7 @@ import { Plus, Clock, FileCode } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
+import { cn } from "@/lib/utils";
 
 export default async function Dashboard() {
     const session = await auth();
@@ -16,43 +17,57 @@ export default async function Dashboard() {
     });
 
     return (
-        <div className="min-h-screen bg-zinc-50 dark:bg-black p-8">
+        <div className="min-h-screen bg-background p-6 md:p-10">
             <div className="max-w-6xl mx-auto">
-                <div className="flex items-center justify-between mb-8">
-                    <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">My Projects</h1>
-                    <Link href="/project/new" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium flex items-center gap-2 transition-colors">
-                        <Plus className="w-4 h-4" /> New Project
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+                    <div>
+                        <h1 className="text-4xl font-black tracking-tight text-foreground mb-1">Workspace</h1>
+                        <p className="text-muted-foreground text-sm">Manage and organize your creative sketches.</p>
+                    </div>
+                    <Link href="/project/new" className="group px-5 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 active:scale-95">
+                        <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" /> New Project
                     </Link>
                 </div>
 
                 {projects.length === 0 ? (
-                    <div className="text-center py-20 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 border-dashed">
-                        <FileCode className="w-12 h-12 text-zinc-400 mx-auto mb-4" />
-                        <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-50 mb-2">No projects yet</h3>
-                        <p className="text-zinc-500 mb-6">Create your first project to start sketching.</p>
-                        <Link href="/project/new" className="text-blue-600 hover:underline">Create Project</Link>
+                    <div className="flex flex-col items-center justify-center py-24 px-6 bg-card text-card-foreground rounded-3xl border border-border border-dashed animate-in fade-in zoom-in-95 duration-500">
+                        <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mb-6">
+                            <FileCode className="w-10 h-10 text-muted-foreground" />
+                        </div>
+                        <h3 className="text-2xl font-bold mb-2">No projects yet</h3>
+                        <p className="text-muted-foreground mb-8 text-center max-w-xs">Start your first project to experience the power of AI-assisted sketching.</p>
+                        <Link href="/project/new" className="px-6 py-3 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl font-bold transition-all border border-border">
+                            Create Your First Project
+                        </Link>
                     </div>
                 ) : (
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
                         {projects.map((project) => (
                             <Link key={project.id} href={`/project/${project.id}`} className="block group">
-                                <div className="bg-white dark:bg-zinc-900 p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-blue-500 dark:hover:border-blue-500 transition-all shadow-sm hover:shadow-md">
-                                    <div className="flex items-start justify-between mb-4">
-                                        <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center text-blue-600 dark:text-blue-400">
-                                            <FileCode className="w-5 h-5" />
+                                <div className="h-full bg-card text-card-foreground p-7 rounded-3xl border border-border hover:border-primary/50 transition-all duration-300 shadow-sm hover:shadow-2xl hover:shadow-primary/5 hover:-translate-y-1.5 flex flex-col">
+                                    <div className="flex items-start justify-between mb-6">
+                                        <div className="w-12 h-12 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-300">
+                                            <FileCode className="w-6 h-6" />
                                         </div>
-                                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${project.status === 'READY' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                                                project.status === 'GENERATING' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                                                    'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-                                            }`}>
-                                            {project.status}
+                                        <span className={cn(
+                                            "text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider",
+                                            project.status === 'READY' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' :
+                                                project.status === 'GENERATING' ? 'bg-amber-500/10 text-amber-600 border border-amber-500/20 animate-pulse' :
+                                                    'bg-muted text-muted-foreground border border-border'
+                                        )}>
+                                            {project.status || 'DRAFT'}
                                         </span>
                                     </div>
-                                    <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50 mb-1 group-hover:text-blue-600 transition-colors">{project.name}</h3>
-                                    <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4 line-clamp-2">{project.description || "No description"}</p>
-                                    <div className="flex items-center text-xs text-zinc-400 gap-1">
-                                        <Clock className="w-3 h-3" />
-                                        <span>Updated {new Date(project.updatedAt).toLocaleDateString()}</span>
+                                    <h3 className="text-xl font-bold mb-2 group-hover:text-primary transition-colors">{project.name}</h3>
+                                    <p className="text-muted-foreground text-sm line-clamp-2 mb-8 flex-grow">{project.description || "No description provided for this project."}</p>
+                                    <div className="flex items-center justify-between pt-6 border-t border-border mt-auto">
+                                        <div className="flex items-center text-[11px] font-medium text-muted-foreground gap-1.5">
+                                            <Clock className="w-3.5 h-3.5 stroke-[2.5]" />
+                                            <span>{new Date(project.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                                        </div>
+                                        <div className="text-[11px] font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                                            Open Project &rarr;
+                                        </div>
                                     </div>
                                 </div>
                             </Link>

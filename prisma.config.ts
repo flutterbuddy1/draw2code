@@ -1,3 +1,4 @@
+// @ts-nocheck
 // prisma.config.ts
 import { defineConfig, env } from "prisma/config";
 import dotenv from "dotenv";

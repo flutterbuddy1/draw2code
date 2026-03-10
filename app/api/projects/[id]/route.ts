@@ -4,9 +4,10 @@ import { auth } from '@/auth';
 
 export async function GET(
     req: Request,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const session = await auth();
         if (!session?.user?.id) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -14,11 +15,11 @@ export async function GET(
 
         const project = await prisma.project.findUnique({
             where: {
-                id: params.id,
+                id: id,
                 userId: session.user.id,
             },
             include: {
-                generatedCode: {
+                generatedCodes: {
                     orderBy: {
                         createdAt: 'desc',
                     },
@@ -32,8 +33,7 @@ export async function GET(
         }
 
         return NextResponse.json({ project });
-    } catch (error) {
-        console.error('Error fetching project:', error);
+    } catch {
         return NextResponse.json(
             { error: 'Failed to fetch project' },
             { status: 500 }
@@ -43,9 +43,10 @@ export async function GET(
 
 export async function PATCH(
     req: Request,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const session = await auth();
         if (!session?.user?.id) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -56,7 +57,7 @@ export async function PATCH(
 
         const project = await prisma.project.update({
             where: {
-                id: params.id,
+                id: id,
                 userId: session.user.id,
             },
             data: {
@@ -69,8 +70,7 @@ export async function PATCH(
         });
 
         return NextResponse.json({ project });
-    } catch (error) {
-        console.error('Error updating project:', error);
+    } catch {
         return NextResponse.json(
             { error: 'Failed to update project' },
             { status: 500 }

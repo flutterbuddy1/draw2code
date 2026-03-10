@@ -14,7 +14,6 @@ function PreviewContent() {
     useEffect(() => {
         async function fetchCode() {
             if (codeId) {
-                // Fetch from database using ID
                 try {
                     const res = await fetch(`/api/code?id=${codeId}`);
                     if (!res.ok) {
@@ -29,7 +28,6 @@ function PreviewContent() {
                     setLoading(false);
                 }
             } else if (encodedCode) {
-                // Fallback to encoded code from URL
                 try {
                     const decodedCode = decodeURIComponent(atob(encodedCode));
                     setHtml(decodedCode);
@@ -50,27 +48,30 @@ function PreviewContent() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-screen bg-zinc-100 dark:bg-zinc-900">
-                <div className="text-zinc-600 dark:text-zinc-400">Loading preview...</div>
+            <div className="flex items-center justify-center h-screen bg-background">
+                <div className="flex flex-col items-center gap-4">
+                    <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+                    <p className="text-sm font-medium text-muted-foreground animate-pulse uppercase tracking-widest">Compiling Preview...</p>
+                </div>
             </div>
         );
     }
 
     if (error || !html) {
         return (
-            <div className="flex items-center justify-center h-screen bg-zinc-100 dark:bg-zinc-900">
-                <div className="text-center">
-                    <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">
-                        {error || 'No Code Provided'}
+            <div className="flex items-center justify-center h-screen bg-background">
+                <div className="text-center p-8 bg-card rounded-3xl border border-border shadow-2xl">
+                    <h1 className="text-3xl font-black text-foreground mb-4 italic-title">
+                        {error || 'No Code Found'}
                     </h1>
-                    <p className="text-zinc-600 dark:text-zinc-400">Please provide code via the URL parameter.</p>
+                    <p className="text-muted-foreground mb-8 text-center max-w-xs">You don&apos;t have any generated code for this project yet. It may have been deleted or expired.</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="w-full h-screen">
+        <div className="w-full h-screen bg-white">
             <iframe
                 srcDoc={html}
                 className="w-full h-full border-none"
@@ -84,8 +85,8 @@ function PreviewContent() {
 export default function PreviewPage() {
     return (
         <Suspense fallback={
-            <div className="flex items-center justify-center h-screen bg-zinc-100 dark:bg-zinc-900">
-                <div className="text-zinc-600 dark:text-zinc-400">Loading preview...</div>
+            <div className="flex items-center justify-center h-screen bg-background">
+                <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
             </div>
         }>
             <PreviewContent />

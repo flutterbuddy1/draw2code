@@ -2,36 +2,57 @@
 
 import { useState, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { Save, Layout, MessageSquare, Mic, Settings, X } from 'lucide-react';
-import { useParams } from 'next/navigation';
+import { Save, Layout, MessageSquare, Mic, Settings, X, ChevronLeft, Undo2, Redo2, Loader2 } from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation';
+import { cn } from '@/lib/utils';
 import type { CanvasBoardRef } from '@/components/editor/CanvasBoard';
+import type { SupabaseConfig, CustomApiConfig } from '@/lib/ai-generator';
 
 // Dynamic import for CanvasBoard to avoid SSR issues with tldraw
 const CanvasBoard = dynamic(() => import('@/components/editor/CanvasBoard'), { ssr: false });
+const ChatSidebar = dynamic(() => import('@/components/editor/ChatSidebar'), { ssr: false });
+
+interface ChatMessage {
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: Date;
+}
 
 export default function ProjectWorkspace() {
     const params = useParams();
+    const router = useRouter();
     const projectId = params.id as string;
     const canvasRef = useRef<CanvasBoardRef>(null);
 
+    const [projectName, setProjectName] = useState('Loading...');
     const [prompt, setPrompt] = useState('');
     const [isGenerating, setIsGenerating] = useState(false);
-    const [language, setLanguage] = useState('english');
+    const [language, setLanguage] = useState('typescript');
     const [framework, setFramework] = useState('react');
-
-    const [initialCanvasData, setInitialCanvasData] = useState<any>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [initialCanvasData, setInitialCanvasData] = useState<unknown>(null);
 
     // State for settings modal
     const [showSettings, setShowSettings] = useState(false);
     const [activeSettingsTab, setActiveSettingsTab] = useState('supabase');
-    const [supabaseConfig, setSupabaseConfig] = useState({
+    const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>({
         enabled: false,
         url: '',
         key: ''
     });
-    const [customApiConfig, setCustomApiConfig] = useState<{ endpoints: { url: string; method: string; desc: string }[] }>({
+    const [customApiConfig, setCustomApiConfig] = useState<CustomApiConfig>({
         endpoints: []
     });
+
+    // Voice & Saving State
+    const [isListening, setIsListening] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const recognitionRef = useRef<any>(null);
+    const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
         const fetchProject = async () => {
@@ -39,24 +60,34 @@ export default function ProjectWorkspace() {
                 const res = await fetch(`/api/projects/${projectId}`);
                 if (res.ok) {
                     const data = await res.json();
+                    setProjectName(data.project.name);
                     if (data.project.canvasData) {
                         setInitialCanvasData(JSON.parse(data.project.canvasData));
                     }
                     if (data.project.supabaseConfig) {
-                        setSupabaseConfig(JSON.parse(data.project.supabaseConfig));
+                        setSupabaseConfig(JSON.parse(data.project.supabaseConfig) as SupabaseConfig);
                     }
                     if (data.project.customApiConfig) {
-                        setCustomApiConfig(JSON.parse(data.project.customApiConfig));
+                        setCustomApiConfig(JSON.parse(data.project.customApiConfig) as CustomApiConfig);
                     }
                 }
             } catch (err) {
                 console.error('Failed to fetch project:', err);
+            } finally {
+                setIsLoading(false);
             }
         };
         fetchProject();
     }, [projectId]);
 
-    const handleSave = async (canvasData: any) => {
+    const handleSave = async (autoData?: unknown) => {
+        setIsSaving(true);
+        const canvasData = autoData || canvasRef.current?.getCanvasData();
+        if (!canvasData) {
+            setIsSaving(false);
+            return;
+        }
+
         try {
             await fetch(`/api/projects/${projectId}`, {
                 method: 'PATCH',
@@ -67,352 +98,593 @@ export default function ProjectWorkspace() {
                     customApiConfig: JSON.stringify(customApiConfig)
                 })
             });
+
+            if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+            saveTimeoutRef.current = setTimeout(() => setIsSaving(false), 2000);
         } catch (err) {
-            console.error('Failed to save canvas:', err);
+            console.error('Failed to save content:', err);
+            setIsSaving(false);
         }
     };
+
     const handleGenerate = async () => {
+        if (!prompt.trim()) return;
         setIsGenerating(true);
 
-        // Get only selected shapes from tldraw (or all if none selected)
         let selectedShapes = null;
         try {
             selectedShapes = canvasRef.current?.getSelectedShapes() || null;
         } catch (e) {
-            console.error("Error getting selected shapes:", e);
+            console.error("Error capturing canvas selection:", e);
         }
-        console.log('Selected shapes:', selectedShapes);
 
         try {
-            console.log('Preparing payload...');
-
-            // Sanitize shapes to ensure no circular references
-            let sanitizedShapes = null;
-            try {
-                sanitizedShapes = selectedShapes ? JSON.parse(JSON.stringify(selectedShapes)) : null;
-            } catch (shapeError) {
-                console.error("Error sanitizing shapes:", shapeError);
-                // If shapes can't be serialized, just send null
-                sanitizedShapes = null;
-            }
-
-            // Sanitize configs
-            let sanitizedSupabase = supabaseConfig;
-            let sanitizedCustomApi = customApiConfig;
-
-            try {
-                sanitizedSupabase = JSON.parse(JSON.stringify(supabaseConfig));
-            } catch (e) {
-                console.error("Error sanitizing supabase config:", e);
-            }
-
-            try {
-                sanitizedCustomApi = JSON.parse(JSON.stringify(customApiConfig));
-            } catch (e) {
-                console.error("Error sanitizing custom API config:", e);
-            }
-
             const payload = {
                 projectId,
                 prompt,
                 framework,
                 language,
-                canvasData: sanitizedShapes,
-                supabaseConfig: sanitizedSupabase,
-                customApiConfig: sanitizedCustomApi
+                canvasData: selectedShapes,
+                supabaseConfig: supabaseConfig.enabled ? supabaseConfig : null,
+                customApiConfig: customApiConfig.endpoints.length > 0 ? customApiConfig : null
             };
-            console.log('Payload prepared:', payload);
-
-            const body = JSON.stringify(payload);
-            console.log('Body stringified successfully');
 
             const res = await fetch('/api/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body
+                body: JSON.stringify(payload)
             });
 
-            console.log(res);
-
-            if (!res.ok) {
-                const text = await res.text();
-                console.error("API Error:", text);
-                return;
-            }
+            if (!res.ok) throw new Error("Generation request failed");
 
             const data = await res.json();
             if (data.success) {
-                // Add the preview as a shape on the canvas with the code ID
                 canvasRef.current?.addPreviewShape(data.code.code, data.code.id);
+                setPrompt(''); // Clear prompt on success
             }
         } catch (err) {
             console.error("Generation error:", err);
+            alert("Failed to generate UI. Please check console or try a different prompt.");
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    const handleChatMessage = async (message: string) => {
+        const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: message, timestamp: new Date() };
+        setChatMessages(prev => [...prev, userMsg]);
+
+        setIsGenerating(true);
+        try {
+            const shapes = canvasRef.current?.getSelectedShapes();
+            const res = await fetch('/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    projectId,
+                    prompt: message,
+                    canvasData: shapes,
+                    language,
+                    framework,
+                    supabaseConfig: supabaseConfig.enabled ? supabaseConfig : null,
+                    customApiConfig: customApiConfig.endpoints.length > 0 ? customApiConfig : null
+                })
+            });
+
+            if (!res.ok) throw new Error("Failed to generate code via chat");
+
+            const data = await res.json();
+            if (data.success) {
+                canvasRef.current?.addPreviewShape(data.code.code, data.code.id);
+                const assistantMsg: ChatMessage = {
+                    id: (Date.now() + 1).toString(),
+                    role: 'assistant',
+                    content: "Applied the requested changes! You can find the updated preview on your canvas.",
+                    timestamp: new Date()
+                };
+                setChatMessages(prev => [...prev, assistantMsg]);
+            }
+        } catch (err) {
+            console.error("Chat error:", err);
+            const errorMsg: ChatMessage = {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: "I'm having trouble processing that right now. Could you try rephrasing?",
+                timestamp: new Date()
+            };
+            setChatMessages(prev => [...prev, errorMsg]);
         } finally {
             setIsGenerating(false);
         }
     };
 
     return (
-        <div className="flex h-screen bg-zinc-50 dark:bg-zinc-950 overflow-hidden">
-            {/* Left Sidebar - Tools */}
-            <div className="w-16 bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 flex flex-col items-center py-4 gap-4 z-10">
-                <button className="p-2 rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+        <div className="flex h-screen bg-background text-foreground overflow-hidden selection:bg-primary/20">
+            {/* Left Sidebar - Navigation & Primary Tools */}
+            <div className="w-16 bg-card border-r border-border flex flex-col items-center py-6 gap-6 z-50 shadow-xl">
+                <button
+                    onClick={() => router.push('/dashboard')}
+                    className="w-10 h-10 rounded-xl bg-background border border-border flex items-center justify-center hover:bg-accent transition-all active:scale-90"
+                    title="Back to Dashboard"
+                >
+                    <ChevronLeft className="w-5 h-5" />
+                </button>
+                <div className="w-8 h-px bg-border" />
+                <button className="p-2.5 rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
                     <Layout className="w-6 h-6" />
                 </button>
-                <button className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500">
+                <button
+                    onClick={() => setIsChatOpen(!isChatOpen)}
+                    className={cn(
+                        "p-2.5 rounded-xl transition-all relative group",
+                        isChatOpen
+                            ? "bg-primary/10 text-primary"
+                            : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    )}
+                    title="AI Assistant"
+                >
                     <MessageSquare className="w-6 h-6" />
+                    {!isChatOpen && <div className="absolute right-0 top-0 w-2 h-2 bg-primary rounded-full border-2 border-card" />}
+                    <div className="absolute left-14 px-2 py-1 bg-popover text-popover-foreground text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                        Chat Assistant
+                    </div>
                 </button>
+                <div className="mt-auto flex flex-col items-center gap-4">
+                    <button
+                        onClick={() => setShowSettings(true)}
+                        className={cn(
+                            "p-2.5 rounded-xl transition-all",
+                            showSettings ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                        )}
+                        title="Integrations & Settings"
+                    >
+                        <Settings className="w-6 h-6" />
+                    </button>
+                    <div className="w-10 h-10 rounded-full bg-muted border border-border flex items-center justify-center text-[10px] font-bold">
+                        {projectName.substring(0, 2).toUpperCase()}
+                    </div>
+                </div>
             </div>
 
             {/* Main Canvas Area */}
-            <div className="flex-1 relative bg-zinc-100 dark:bg-zinc-900/50 overflow-hidden">
-                <CanvasBoard
-                    ref={canvasRef}
-                    onSave={handleSave}
-                    initialData={initialCanvasData}
+            <div className="flex-1 relative overflow-hidden bg-[radial-gradient(circle_at_center,var(--border)_1px,transparent_1px)] bg-[size:24px_24px]">
+                {isLoading ? (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+                        <div className="flex flex-col items-center gap-6">
+                            <div className="relative">
+                                <div className="w-16 h-16 border-4 border-primary/10 border-t-primary rounded-full animate-spin" />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="w-8 h-8 bg-primary/20 rounded-full animate-pulse" />
+                                </div>
+                            </div>
+                            <div className="text-center">
+                                <h3 className="text-lg font-bold italic-title">Initializing Workspace</h3>
+                                <p className="text-xs text-muted-foreground uppercase tracking-widest mt-1">Fetching Canvas States</p>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <CanvasBoard
+                        ref={canvasRef}
+                        onSave={handleSave}
+                        initialData={initialCanvasData}
+                    />
+                )}
+
+                <ChatSidebar
+                    isOpen={isChatOpen}
+                    onClose={() => setIsChatOpen(false)}
+                    onSendMessage={handleChatMessage}
+                    isGenerating={isGenerating}
+                    messages={chatMessages}
                 />
 
-                {/* Top Floating Toolbar (Keep existing) */}
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white dark:bg-zinc-800 p-2 rounded-lg shadow-lg border border-zinc-200 dark:border-zinc-700 flex items-center gap-2 z-10">
-                    <button className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded" title="Save">
-                        <Save className="w-5 h-5" />
-                    </button>
-                    <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-600 mx-1" />
-                    <button className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded" title="Undo">
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" /></svg>
-                    </button>
-                    <button className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded" title="Redo">
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" /></svg>
+                {/* Top Center Toolbar */}
+                <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur-xl px-4 py-2.5 rounded-2xl shadow-2xl border border-border/50 flex items-center gap-4 z-40 transition-all hover:border-primary/30">
+                    <div className="flex items-center gap-3">
+                        <h2 className="text-sm font-bold tracking-tight px-2">{projectName}</h2>
+                        <div
+                            className={cn(
+                                "flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter",
+                                isSaving ? "bg-amber-500/10 text-amber-600 animate-pulse" : "bg-emerald-500/10 text-emerald-600"
+                            )}
+                        >
+                            <span className={cn("w-1.5 h-1.5 rounded-full", isSaving ? "bg-amber-500" : "bg-emerald-500")} />
+                            {isSaving ? "Saving" : "Synced"}
+                        </div>
+                    </div>
+                    <div className="w-px h-6 bg-border" />
+                    <div className="flex items-center gap-1">
+                        <button
+                            className="p-1.5 hover:bg-accent rounded-lg text-muted-foreground transition-all active:scale-90"
+                            title="Undo"
+                            onClick={() => (canvasRef.current as { getEditor: () => { undo: () => void } | null })?.getEditor()?.undo()}
+                        >
+                            <Undo2 className="w-4 h-4" />
+                        </button>
+                        <button
+                            className="p-1.5 hover:bg-accent rounded-lg text-muted-foreground transition-all active:scale-90"
+                            title="Redo"
+                            onClick={() => (canvasRef.current as { getEditor: () => { redo: () => void } | null })?.getEditor()?.redo()}
+                        >
+                            <Redo2 className="w-4 h-4" />
+                        </button>
+                    </div>
+                    <div className="w-px h-6 bg-border" />
+                    <button
+                        onClick={() => handleSave()}
+                        disabled={isSaving}
+                        className="flex items-center gap-2 pl-2 pr-1 text-xs font-bold text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
+                    >
+                        Force Save
+                        <div className="p-1.5 bg-primary/10 rounded-lg group-hover:bg-primary/20 transition-colors">
+                            <Save className="w-4 h-4" />
+                        </div>
                     </button>
                 </div>
 
-                {/* Bottom Floating Prompt Bar */}
-                <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-10 w-full max-w-md px-4">
-                    {/* Settings Row */}
-                    <div className="flex items-center gap-2 bg-white p-1 rounded-lg shadow-md border border-zinc-200 text-xs">
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-zinc-50 rounded border border-zinc-200">
-                            <span className="text-zinc-500">Mode:</span>
-                            <select
-                                className="bg-transparent font-medium text-zinc-800 outline-none cursor-pointer"
-                                value={language}
-                                onChange={(e) => setLanguage(e.target.value)}
-                            >
-                                <option value="english">English</option>
-                                <option value="spanish">Spanish</option>
-                                <option value="hindi">Hindi</option>
-                            </select>
+                {/* Bottom Center Engine Bar */}
+                <div className="absolute bottom-16 left-1/2 -translate-x-1/2 w-full max-w-3xl px-8 z-40">
+                    <div className="flex flex-col gap-4">
+                        {/* Configuration Strip */}
+                        <div className="flex items-center justify-between bg-card/80 backdrop-blur-xl px-4 py-2 rounded-2xl border border-border/50 shadow-xl overflow-x-auto no-scrollbar">
+                            <div className="flex items-center gap-6">
+                                <div className="flex items-center gap-3">
+                                    <span className="text-[10px] font-black text-muted-foreground uppercase opacity-60">Framework</span>
+                                    <div className="flex items-center bg-muted rounded-xl p-1">
+                                        {['react', 'nextjs'].map((f) => (
+                                            <button
+                                                key={f}
+                                                onClick={() => setFramework(f)}
+                                                className={cn(
+                                                    "px-4 py-1.5 text-[11px] font-bold rounded-lg transition-all capitalize",
+                                                    framework === f ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
+                                                )}
+                                            >
+                                                {f}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="h-4 w-px bg-border" />
+                                <div className="flex items-center gap-3">
+                                    <span className="text-[10px] font-black text-muted-foreground uppercase opacity-60">Language</span>
+                                    <div className="flex items-center bg-muted rounded-xl p-1">
+                                        {['typescript', 'javascript'].map((l) => (
+                                            <button
+                                                key={l}
+                                                onClick={() => setLanguage(l)}
+                                                className={cn(
+                                                    "px-4 py-1.5 text-[11px] font-bold rounded-lg transition-all capitalize",
+                                                    language === l ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
+                                                )}
+                                            >
+                                                {l === 'typescript' ? 'TS' : 'JS'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-4 ml-4">
+                                <div className="h-4 w-px bg-border" />
+                                <p className="text-[10px] font-bold text-muted-foreground bg-accent px-2 py-1 rounded">V4 ENGINE</p>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-zinc-50 rounded border border-zinc-200">
-                            <span className="text-zinc-500">Framework:</span>
-                            <select
-                                className="bg-transparent font-medium text-zinc-800 outline-none cursor-pointer"
-                                value={framework}
-                                onChange={(e) => setFramework(e.target.value)}
-                            >
-                                <option value="react">React</option>
-                                <option value="html">HTML</option>
-                                <option value="vue">Vue</option>
-                            </select>
+
+                        {/* Main AI Terminal */}
+                        <div className="bg-card/95 backdrop-blur-2xl p-2 rounded-3xl shadow-2xl border border-border/40 focus-within:border-primary/40 focus-within:ring-4 focus-within:ring-primary/5 transition-all">
+                            <div className="relative flex items-center">
+                                <textarea
+                                    value={prompt}
+                                    onChange={(e) => setPrompt(e.target.value)}
+                                    placeholder="Describe your vision, and AI will weave the code..."
+                                    className="w-full bg-transparent border-none focus:ring-0 text-sm font-medium py-4 px-6 pr-36 min-h-[60px] max-h-[200px] resize-none text-foreground placeholder:text-muted-foreground/50 scrollbar-none"
+                                    rows={1}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            handleGenerate();
+                                        }
+                                    }}
+                                />
+                                <div className="absolute right-3 flex items-center gap-3">
+                                    <button
+                                        onClick={() => {
+                                            if (isListening) {
+                                                recognitionRef.current?.stop();
+                                                setIsListening(false);
+                                                return;
+                                            }
+
+                                            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                                            // @ts-expect-error
+                                            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                                            if (!SpeechRecognition) {
+                                                alert('Speech recognition not supported in this browser.');
+                                                return;
+                                            }
+
+                                            setIsListening(true);
+                                            const recognition = new SpeechRecognition();
+                                            recognitionRef.current = recognition;
+                                            recognition.lang = 'en-US';
+                                            recognition.continuous = true;
+                                            recognition.interimResults = true;
+
+                                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                            recognition.onresult = (event: any) => {
+                                                let finalTranscript = '';
+                                                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                                                    if (event.results[i].isFinal) {
+                                                        finalTranscript += event.results[i][0].transcript;
+                                                    }
+                                                }
+                                                if (finalTranscript) {
+                                                    setPrompt((prev) => prev + (prev ? ' ' : '') + finalTranscript);
+                                                }
+                                            };
+
+                                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                            recognition.onerror = (event: any) => {
+                                                console.error('Speech recognition error:', event.error);
+                                                setIsListening(false);
+                                            };
+
+                                            recognition.onend = () => {
+                                                // Only stop if we manually set isListening to false
+                                                if (isListening) {
+                                                    try {
+                                                        recognition.start();
+                                                    } catch {
+                                                        setIsListening(false);
+                                                    }
+                                                }
+                                            };
+
+                                            recognition.start();
+                                        }}
+                                        className={cn(
+                                            "p-3 rounded-2xl transition-all relative overflow-hidden active:scale-90",
+                                            isListening
+                                                ? "bg-destructive/10 text-destructive shadow-inner shadow-destructive/20 border-destructive/20"
+                                                : "text-muted-foreground hover:text-foreground hover:bg-accent border border-transparent"
+                                        )}
+                                        title={isListening ? "Stop Listening" : "Start Voice Lab"}
+                                    >
+                                        {isListening && <div className="absolute inset-0 bg-destructive animate-pulse opacity-10" />}
+                                        {isListening ? (
+                                            <div className="flex items-center gap-2">
+                                                <div className="relative">
+                                                    <div className="absolute -inset-1 bg-destructive/40 rounded-full animate-ping" />
+                                                    <Mic className="w-5 h-5 relative z-10 animate-pulse" />
+                                                </div>
+                                                <X className="w-4 h-4 ml-1 opacity-60 hover:opacity-100 transition-opacity" />
+                                            </div>
+                                        ) : (
+                                            <Mic className="w-5 h-5" />
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={handleGenerate}
+                                        disabled={isGenerating || !prompt.trim()}
+                                        className={cn(
+                                            "px-6 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all flex items-center gap-2",
+                                            isGenerating || !prompt.trim()
+                                                ? "bg-muted text-muted-foreground cursor-not-allowed border border-border"
+                                                : "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:shadow-primary/30 hover:-translate-y-0.5 active:scale-95 active:translate-y-0"
+                                        )}
+                                    >
+                                        {isGenerating ? (
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                        ) : (
+                                            <>
+                                                Generate
+                                                <span className="opacity-40">⏎</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-
-                    {/* Input Area */}
-                    <div className="w-full bg-white rounded-xl shadow-lg border border-zinc-200 p-1 flex items-center gap-2">
-                        <input
-                            type="text"
-                            className="flex-1 bg-transparent border-none outline-none px-3 py-1.5 text-sm text-zinc-800 placeholder-zinc-400"
-                            placeholder="Describe your app..."
-                            value={prompt}
-                            onChange={(e) => setPrompt(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleGenerate()}
-                        />
-                        <button className="p-1.5 text-zinc-400 hover:text-zinc-600 rounded-lg hover:bg-zinc-100 transition-colors">
-                            <Mic className="w-4 h-4" />
-                        </button>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => setShowSettings(true)}
-                            className="bg-white text-zinc-600 px-3 py-1.5 rounded-full text-xs font-medium shadow-md border border-zinc-200 hover:bg-zinc-50 transition-all flex items-center gap-2"
-                        >
-                            <Settings className="w-3.5 h-3.5" />
-                            <span>Settings</span>
-                        </button>
-                        <button
-                            onClick={handleGenerate}
-                            disabled={isGenerating}
-                            className="bg-blue-500 text-white px-4 py-1.5 rounded-full text-xs font-medium shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
-                        >
-                            {isGenerating ? (
-                                <>Building...</>
-                            ) : (
-                                <>
-                                    <span>Build</span>
-                                </>
-                            )}
-                        </button>
                     </div>
                 </div>
             </div>
 
-            {/* Settings Modal */}
+            {/* Settings Modal (Updated Styles) */}
             {showSettings && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl rounded-xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-                        <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
-                            <h2 className="text-lg font-semibold">Project Settings</h2>
-                            <button onClick={() => setShowSettings(false)} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg">
-                                <X className="w-5 h-5" />
+                <div className="fixed inset-0 bg-background/80 backdrop-blur-md z-[1000] flex items-center justify-center p-4 animate-in fade-in duration-300">
+                    <div className="bg-card w-full max-w-2xl rounded-3xl shadow-2xl border border-border overflow-hidden animate-in zoom-in-95 duration-300">
+                        <div className="flex items-center justify-between p-8 border-b border-border bg-accent/20">
+                            <div>
+                                <h2 className="text-2xl font-black italic-title">Workspace Config</h2>
+                                <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest mt-1">Integrations & Backend Settings</p>
+                            </div>
+                            <button onClick={() => setShowSettings(false)} className="p-3 hover:bg-accent rounded-2xl transition-all active:scale-90">
+                                <X className="w-6 h-6" />
                             </button>
                         </div>
 
-                        <div className="flex border-b border-zinc-200 dark:border-zinc-800">
+                        <div className="flex bg-muted/30 px-8">
                             <button
-                                className={`flex-1 py-3 text-sm font-medium border-b-2 ${activeSettingsTab === 'supabase' ? 'border-blue-500 text-blue-600' : 'border-transparent text-zinc-500 hover:text-zinc-700'}`}
+                                className={cn(
+                                    "px-6 py-4 text-xs font-black uppercase tracking-widest border-b-4 transition-all",
+                                    activeSettingsTab === 'supabase' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+                                )}
                                 onClick={() => setActiveSettingsTab('supabase')}
                             >
-                                Supabase Integration
+                                Supabase
                             </button>
                             <button
-                                className={`flex-1 py-3 text-sm font-medium border-b-2 ${activeSettingsTab === 'api' ? 'border-blue-500 text-blue-600' : 'border-transparent text-zinc-500 hover:text-zinc-700'}`}
+                                className={cn(
+                                    "px-6 py-4 text-xs font-black uppercase tracking-widest border-b-4 transition-all",
+                                    activeSettingsTab === 'api' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+                                )}
                                 onClick={() => setActiveSettingsTab('api')}
                             >
                                 Custom APIs
                             </button>
                         </div>
 
-                        <div className="p-6 max-h-[60vh] overflow-y-auto">
+                        <div className="p-8 max-h-[50vh] overflow-y-auto space-y-8 scrollbar-thin scrollbar-thumb-border">
                             {activeSettingsTab === 'supabase' && (
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-sm font-medium">Enable Supabase</label>
-                                        <input
-                                            type="checkbox"
-                                            checked={supabaseConfig.enabled}
-                                            onChange={(e) => setSupabaseConfig({ ...supabaseConfig, enabled: e.target.checked })}
-                                            className="w-4 h-4"
-                                        />
+                                <div className="space-y-6">
+                                    <div className="flex items-center justify-between p-6 bg-accent/30 rounded-3xl border border-border border-dashed">
+                                        <div className="space-y-1">
+                                            <label className="text-base font-bold">Supabase Backend</label>
+                                            <p className="text-xs text-muted-foreground">Enable direct data fetching from your Supabase project.</p>
+                                        </div>
+                                        <div
+                                            className={cn(
+                                                "w-14 h-8 rounded-full p-1 cursor-pointer transition-colors",
+                                                supabaseConfig.enabled ? "bg-primary" : "bg-muted"
+                                            )}
+                                            onClick={() => setSupabaseConfig({ ...supabaseConfig, enabled: !supabaseConfig.enabled })}
+                                        >
+                                            <div className={cn("w-6 h-6 bg-white rounded-full transition-transform", supabaseConfig.enabled ? "translate-x-6" : "translate-x-0")} />
+                                        </div>
                                     </div>
 
                                     {supabaseConfig.enabled && (
-                                        <>
+                                        <div className="space-y-4 animate-in slide-in-from-top-4 duration-300">
                                             <div className="space-y-2">
-                                                <label className="text-xs text-zinc-500">Project URL</label>
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Project URL</label>
                                                 <input
                                                     type="text"
                                                     value={supabaseConfig.url}
                                                     onChange={(e) => setSupabaseConfig({ ...supabaseConfig, url: e.target.value })}
-                                                    className="w-full p-2 text-sm border rounded-lg bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+                                                    className="w-full p-4 text-sm border-2 border-border rounded-2xl bg-muted/30 focus:border-primary outline-none transition-all"
                                                     placeholder="https://xyz.supabase.co"
                                                 />
                                             </div>
                                             <div className="space-y-2">
-                                                <label className="text-xs text-zinc-500">Anon Key</label>
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Anon Key</label>
                                                 <input
                                                     type="password"
                                                     value={supabaseConfig.key}
                                                     onChange={(e) => setSupabaseConfig({ ...supabaseConfig, key: e.target.value })}
-                                                    className="w-full p-2 text-sm border rounded-lg bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
-                                                    placeholder="public-anon-key"
+                                                    className="w-full p-4 text-sm border-2 border-border rounded-2xl bg-muted/30 focus:border-primary outline-none transition-all"
+                                                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                                                 />
                                             </div>
-                                        </>
+                                        </div>
                                     )}
                                 </div>
                             )}
 
                             {activeSettingsTab === 'api' && (
-                                <div className="space-y-4">
+                                <div className="space-y-6">
                                     <div className="flex justify-between items-center">
-                                        <h3 className="text-sm font-medium">API Endpoints</h3>
+                                        <div>
+                                            <h3 className="text-lg font-bold">Endpoints</h3>
+                                            <p className="text-xs text-muted-foreground">Register external services for specialized AI generation.</p>
+                                        </div>
                                         <button
                                             onClick={() => setCustomApiConfig({
                                                 endpoints: [...customApiConfig.endpoints, { url: '', method: 'GET', desc: '' }]
                                             })}
-                                            className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded hover:bg-blue-100"
+                                            className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-primary/10 text-primary border border-primary/20 rounded-xl hover:bg-primary/20 transition-all active:scale-95"
                                         >
-                                            + Add Endpoint
+                                            + Add
                                         </button>
                                     </div>
 
-                                    {customApiConfig.endpoints.map((endpoint: any, idx: number) => (
-                                        <div key={idx} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg space-y-2 border border-zinc-200 dark:border-zinc-700">
-                                            <div className="flex gap-2">
-                                                <select
-                                                    value={endpoint.method}
-                                                    onChange={(e) => {
-                                                        const newEndpoints = [...customApiConfig.endpoints];
-                                                        newEndpoints[idx].method = e.target.value;
-                                                        setCustomApiConfig({ endpoints: newEndpoints });
-                                                    }}
-                                                    className="text-xs p-1 rounded border"
-                                                >
-                                                    <option>GET</option>
-                                                    <option>POST</option>
-                                                    <option>PUT</option>
-                                                    <option>DELETE</option>
-                                                </select>
-                                                <input
-                                                    type="text"
-                                                    value={endpoint.url}
-                                                    onChange={(e) => {
-                                                        const newEndpoints = [...customApiConfig.endpoints];
-                                                        newEndpoints[idx].url = e.target.value;
-                                                        setCustomApiConfig({ endpoints: newEndpoints });
-                                                    }}
-                                                    className="flex-1 text-xs p-1 rounded border"
-                                                    placeholder="https://api.example.com/v1/resource"
-                                                />
-                                                <button
-                                                    onClick={() => {
-                                                        const newEndpoints = customApiConfig.endpoints.filter((_: any, i: number) => i !== idx);
-                                                        setCustomApiConfig({ endpoints: newEndpoints });
-                                                    }}
-                                                    className="text-red-500 hover:bg-red-50 p-1 rounded"
-                                                >
-                                                    <X className="w-3 h-3" />
-                                                </button>
+                                    <div className="space-y-4">
+                                        {customApiConfig.endpoints.length === 0 ? (
+                                            <div className="py-12 border-2 border-dashed border-border rounded-3xl text-center text-muted-foreground">
+                                                <p className="text-xs font-medium uppercase tracking-widest">No custom endpoints configured</p>
                                             </div>
-                                            <input
-                                                type="text"
-                                                value={endpoint.desc}
-                                                onChange={(e) => {
-                                                    const newEndpoints = [...customApiConfig.endpoints];
-                                                    newEndpoints[idx].desc = e.target.value;
-                                                    setCustomApiConfig({ endpoints: newEndpoints });
-                                                }}
-                                                className="w-full text-xs p-1 rounded border"
-                                                placeholder="Description (e.g., Fetches user profile)"
-                                            />
-                                        </div>
-                                    ))}
+                                        ) : (
+                                            customApiConfig.endpoints.map((endpoint: { method: string; url: string; desc: string }, idx: number) => (
+                                                <div key={idx} className="p-6 bg-accent/20 rounded-3xl border border-border group relative animate-in slide-in-from-right-4 duration-300">
+                                                    <div className="flex gap-4 mb-4">
+                                                        <select
+                                                            value={endpoint.method}
+                                                            onChange={(e) => {
+                                                                const newEndpoints = [...customApiConfig.endpoints];
+                                                                newEndpoints[idx].method = e.target.value;
+                                                                setCustomApiConfig({ endpoints: newEndpoints });
+                                                            }}
+                                                            className="text-[10px] font-black uppercase tracking-widest p-2 rounded-xl border border-border bg-card outline-none focus:border-primary"
+                                                        >
+                                                            <option>GET</option>
+                                                            <option>POST</option>
+                                                            <option>PUT</option>
+                                                            <option>DELETE</option>
+                                                        </select>
+                                                        <input
+                                                            type="text"
+                                                            value={endpoint.url}
+                                                            onChange={(e) => {
+                                                                const newEndpoints = [...customApiConfig.endpoints];
+                                                                newEndpoints[idx].url = e.target.value;
+                                                                setCustomApiConfig({ endpoints: newEndpoints });
+                                                            }}
+                                                            className="flex-1 text-xs p-2.5 rounded-xl border border-border bg-card outline-none focus:border-primary placeholder:text-muted-foreground/40"
+                                                            placeholder="Endpoint URL"
+                                                        />
+                                                    </div>
+                                                    <input
+                                                        type="text"
+                                                        value={endpoint.desc}
+                                                        onChange={(e) => {
+                                                            const newEndpoints = [...customApiConfig.endpoints];
+                                                            newEndpoints[idx].desc = e.target.value;
+                                                            setCustomApiConfig({ endpoints: newEndpoints });
+                                                        }}
+                                                        className="w-full text-xs p-2.5 rounded-xl border border-border bg-card outline-none focus:border-primary placeholder:text-muted-foreground/40"
+                                                        placeholder="What does this do? (e.g., Auth service)"
+                                                    />
+                                                    <button
+                                                        onClick={() => {
+                                                            const newEndpoints = customApiConfig.endpoints.filter((_: unknown, i: number) => i !== idx);
+                                                            setCustomApiConfig({ endpoints: newEndpoints });
+                                                        }}
+                                                        className="absolute -top-2 -right-2 p-1.5 bg-background border border-border text-destructive rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-white"
+                                                    >
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>
 
-                        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-2">
+                        <div className="p-8 border-t border-border bg-muted/20 flex justify-end gap-3">
                             <button
                                 onClick={() => setShowSettings(false)}
-                                className="px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100 rounded-lg"
+                                className="px-6 py-3 text-xs font-black uppercase tracking-widest text-muted-foreground hover:bg-accent rounded-2xl transition-all"
                             >
-                                Cancel
+                                Discard
                             </button>
                             <button
                                 onClick={() => {
-                                    handleSave(initialCanvasData); // Save everything
+                                    handleSave();
                                     setShowSettings(false);
                                 }}
-                                className="px-4 py-2 text-sm bg-blue-600 text-white hover:bg-blue-700 rounded-lg"
+                                className="px-8 py-3 text-xs font-black uppercase tracking-widest bg-primary text-primary-foreground hover:bg-primary/90 rounded-2xl shadow-lg shadow-primary/20 transition-all active:scale-95"
                             >
-                                Save Settings
+                                Apply Changes
                             </button>
                         </div>
                     </div>
                 </div>
             )}
+
+            <style jsx global>{`
+                .italic-title {
+                    font-style: italic;
+                    letter-spacing: -0.05em;
+                }
+                .no-scrollbar::-webkit-scrollbar {
+                    display: none;
+                }
+                .no-scrollbar {
+                    -ms-overflow-style: none;
+                    scrollbar-width: none;
+                }
+            `}</style>
         </div>
     );
 }
-
