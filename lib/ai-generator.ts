@@ -50,6 +50,10 @@ export async function generateAppCode(
     - If the framework is 'react', use React via CDN and Babel standalone.
     - Ensure the app is fully responsive (mobile, tablet, desktop).
     - All UI text must be in ${language}.
+    - IMAGES: 
+        - If the 'Canvas Data' contains shapes of type 'image', use their 'url' property for <img> tags.
+        - If you need decorative images, use high-quality Unsplash URLs (e.g., https://images.unsplash.com/photo-...).
+        - Use descriptive alt tags for all images.
 
     Context:
     - User Description: ${prompt}

@@ -93,6 +93,27 @@ export class PreviewShapeUtil extends BaseBoxShapeUtil<PreviewShape> {
             }
         };
 
+        const [showAssets, setShowAssets] = useState(false);
+        const [tempHtml, setTempHtml] = useState(shape.props.html);
+
+        const images = Array.from(new Set(
+            tempHtml.match(/src="([^"]+)"/g)?.map(m => m.match(/src="([^"]+)"/)?.[1]) || []
+        )).filter(src => src && (src.startsWith('http') || src.startsWith('/')));
+
+        const handleReplaceImage = (oldSrc: string, newSrc: string) => {
+            if (!newSrc.trim()) return;
+            const updatedHtml = tempHtml.split(`src="${oldSrc}"`).join(`src="${newSrc}"`);
+            setTempHtml(updatedHtml);
+            this.editor.updateShape({
+                id: shape.id,
+                type: 'preview',
+                props: {
+                    ...shape.props,
+                    html: updatedHtml
+                }
+            });
+        };
+
         return (
             <HTMLContainer
                 id={shape.id}
@@ -198,6 +219,28 @@ export class PreviewShapeUtil extends BaseBoxShapeUtil<PreviewShape> {
                             <span>Open</span>
                         </button>
                         <button
+                            onPointerDown={(e) => { e.stopPropagation(); setShowAssets(!showAssets); }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            style={{
+                                padding: '5px 10px',
+                                fontSize: '11px',
+                                background: showAssets ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.2)',
+                                border: 'none',
+                                borderRadius: '4px',
+                                color: 'white',
+                                cursor: 'pointer',
+                                fontWeight: '500',
+                                transition: 'background 0.2s',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                            }}
+                            title="Manage Images"
+                        >
+                            <span>🖼️</span>
+                            <span>Media</span>
+                        </button>
+                        <button
                             onPointerDown={(e) => {
                                 e.stopPropagation();
                                 e.preventDefault();
@@ -237,18 +280,69 @@ export class PreviewShapeUtil extends BaseBoxShapeUtil<PreviewShape> {
                         </button>
                     </div>
                 </div>
-                <iframe
-                    srcDoc={shape.props.html}
-                    style={{
-                        width: '100%',
-                        height: 'calc(100% - 36px)',
-                        border: 'none',
-                        background: 'white',
-                        pointerEvents: 'auto'
-                    }}
-                    sandbox="allow-scripts allow-same-origin"
-                    title="Preview"
-                />
+                <div style={{ position: 'relative', width: '100%', height: 'calc(100% - 36px)' }}>
+                    <iframe
+                        srcDoc={shape.props.html}
+                        style={{
+                            width: '100%',
+                            height: '100%',
+                            border: 'none',
+                            background: 'white',
+                            pointerEvents: 'auto'
+                        }}
+                        sandbox="allow-scripts allow-same-origin"
+                        title="Preview"
+                    />
+                    
+                    {showAssets && (
+                        <div style={{
+                            position: 'absolute',
+                            top: 0,
+                            right: 0,
+                            width: '280px',
+                            height: '100%',
+                            background: 'rgba(255,255,255,0.95)',
+                            backdropFilter: 'blur(10px)',
+                            borderLeft: '1px solid #e5e7eb',
+                            padding: '16px',
+                            overflowY: 'auto',
+                            zIndex: 100,
+                            boxShadow: '-4px 0 20px rgba(0,0,0,0.1)',
+                            animation: 'slideIn 0.3s ease-out'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <h3 style={{ fontSize: '14px', fontWeight: 'bold', margin: 0 }}>Project Images</h3>
+                                <button onClick={() => setShowAssets(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: '18px' }}>×</button>
+                            </div>
+                            
+                            {images.length === 0 ? (
+                                <p style={{ fontSize: '12px', color: '#6b7280', textAlign: 'center', marginTop: '40px' }}>No images found in this code.</p>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                    {images.map((src, i) => (
+                                        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px', background: 'white', borderRadius: '8px', border: '1px solid #f3f4f6' }}>
+                                            <img src={src} alt="Preview" style={{ width: '100%', height: '100px', objectFit: 'cover', borderRadius: '4px', background: '#f9fafb' }} />
+                                            <input 
+                                                type="text" 
+                                                defaultValue={src} 
+                                                onBlur={(e) => handleReplaceImage(src, e.target.value)}
+                                                placeholder="Paste new image URL..."
+                                                style={{ fontSize: '10px', padding: '6px', border: '1px solid #e5e7eb', borderRadius: '4px', outline: 'none' }}
+                                            />
+                                            <span style={{ fontSize: '9px', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{src}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+                <style>{`
+                    @keyframes slideIn {
+                        from { transform: translateX(100%); }
+                        to { transform: translateX(0); }
+                    }
+                `}</style>
             </HTMLContainer>
         )
     }
