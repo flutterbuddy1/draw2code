@@ -197,6 +197,44 @@ export class PreviewShapeUtil extends BaseBoxShapeUtil<PreviewShape> {
                             <span>🔗</span>
                             <span>Open</span>
                         </button>
+                        <button
+                            onPointerDown={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                if (shape.props.codeId) {
+                                    const shareUrl = `${window.location.origin}/share/${shape.props.codeId}`;
+                                    navigator.clipboard.writeText(shareUrl).then(() => {
+                                        alert('Public share link copied to clipboard!');
+                                    }).catch(err => {
+                                        console.error('Failed to copy:', err);
+                                        alert('Failed to copy share link');
+                                    });
+                                } else {
+                                    alert('Persistent ID not found. Please regenerate to enable sharing.');
+                                }
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            style={{
+                                padding: '5px 10px',
+                                fontSize: '11px',
+                                background: 'rgba(255,255,255,0.2)',
+                                border: 'none',
+                                borderRadius: '4px',
+                                color: 'white',
+                                cursor: 'pointer',
+                                fontWeight: '500',
+                                transition: 'background 0.2s',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.3)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                            title="Copy public share link"
+                        >
+                            <span>📢</span>
+                            <span>Share</span>
+                        </button>
                     </div>
                 </div>
                 <iframe
