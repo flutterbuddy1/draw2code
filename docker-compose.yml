@@ -1,0 +1,44 @@
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: draw2fun-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-mysql}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-draw2fun}
+      MYSQL_USER: ${MYSQL_USER:-appuser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-apppassword}
+    ports:
+      - "3307:3306"   # ✅ conflict avoid
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      retries: 5
+      timeout: 5s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: draw2fun-app
+    restart: unless-stopped
+    ports:
+      - "3993:3993"
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-appuser}:${MYSQL_PASSWORD:-apppassword}@db:3306/${MYSQL_DATABASE:-draw2fun}
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3993}
+      AI_PROVIDER: openai
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      CODE_MODEL: gpt-4o
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:
