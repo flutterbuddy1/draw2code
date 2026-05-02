@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+// We'll use fetch for OpenAI to avoid dependency issues with the SDK
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export interface SupabaseConfig {
@@ -26,63 +27,90 @@ export async function generateAppCode(
   supabaseConfig?: SupabaseConfig,
   customApiConfig?: CustomApiConfig
 ) {
-  console.log('Generating app with Gemini:', { prompt, framework, language });
+  const provider = process.env.AI_PROVIDER || 'openai';
+  const modelName = process.env.CODE_MODEL || (provider === 'openai' ? 'gpt-4o' : 'gemini-1.5-flash');
 
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY is not set");
-  }
+  console.log(`Generating app with ${provider} (${modelName}):`, { prompt, framework, language });
 
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  const systemPrompt = `
+    You are a world-class Senior Frontend Engineer and UI/UX Designer.
+    Your goal is to create a STUNNING, premium, and fully functional web application based on the user's sketch/description.
 
-  const fullPrompt = `
-    You are an expert frontend developer.
-    Task: Generate a single HTML file containing the complete code for a web application based on the user's description and canvas data.
-    
-    User Description: ${prompt}
-    Canvas Context: ${JSON.stringify(canvasData)}
-    Target Framework: ${framework}
-    Target Language: ${language}
-    
-    Requirements:
+    Design Principles:
+    - Aesthetics: Use a modern, "Apple-like" or "SaaS premium" aesthetic. Use vibrant gradients, subtle shadows, and glassmorphism where appropriate.
+    - Typography: Use "Inter" or "System-UI" fonts. Ensure clear hierarchy.
+    - Colors: Use a curated color palette (e.g., Slate, Indigo, Violet). Avoid pure black/white; use deep grays and soft whites.
+    - Spacing: Use generous whitespace and consistent padding.
+    - Components: Use modern UI patterns. If the user asks for a button, make it look professional with hover states.
+
+    Technical Requirements:
     - Output ONLY valid HTML code with embedded CSS (<style>) and JavaScript (<script>).
-    - Use Tailwind CSS via CDN for styling: <script src="https://cdn.tailwindcss.com"></script>
-    - Ensure the design is modern, clean, mobile friendly and responsive.
-    - Do NOT include markdown code fences (like \`\`\`html). Just the raw code.
-    - The app should be functional and interactive if requested.
-    - All UI text, labels, and placeholders MUST be in ${language}.
-    - If the framework is 'react' or 'vue', use the appropriate CDN and syntax for a single-file demo (e.g., React via Babel standalone).
+    - Use Tailwind CSS via CDN: <script src="https://cdn.tailwindcss.com"></script>
+    - Use Lucide Icons: <script src="https://unpkg.com/lucide@latest"></script>
+    - If the framework is 'react', use React via CDN and Babel standalone.
+    - Ensure the app is fully responsive (mobile, tablet, desktop).
+    - All UI text must be in ${language}.
+
+    Context:
+    - User Description: ${prompt}
+    - Canvas Data (Spatial layout): ${JSON.stringify(canvasData)}
 
     ${supabaseConfig?.enabled ? `
-    IMPORTANT: SUPABASE INTEGRATION REQUIRED
-    - The user wants to use Supabase for backend features.
-    - Initialize the Supabase client using:
-      const supabaseUrl = '${supabaseConfig.url}';
-      const supabaseKey = '${supabaseConfig.key}';
-      const supabase = supabase.createClient(supabaseUrl, supabaseKey);
-    - Use the @supabase/supabase-js library from CDN: https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2
-    - Implement the requested features using this client (e.g., auth, database queries).
+    Supabase Integration:
+    - URL: ${supabaseConfig.url}
+    - Key: ${supabaseConfig.key}
+    - Use @supabase/supabase-js via CDN. Initialize and implement logic.
     ` : ''}
 
     ${customApiConfig?.endpoints && customApiConfig.endpoints.length > 0 ? `
-    IMPORTANT: USE CUSTOM API ENDPOINTS
-    - The user has provided specific API endpoints to use.
-    - Do NOT mock data if a relevant endpoint is available.
-    - Available Endpoints:
+    Custom API Integration:
     ${customApiConfig.endpoints.map((e: ApiEndpoint) => `- ${e.method} ${e.url}: ${e.desc}`).join('\n')}
     ` : ''}
+
+    Output Format:
+    - Return ONLY the raw HTML code.
+    - NO markdown fences (no \`\`\`html).
+    - Ensure it is a single, copy-pasteable file that works instantly.
   `;
 
   try {
-    const result = await model.generateContent(fullPrompt);
-    const response = await result.response;
-    let text = response.text();
+    if (provider === 'openai') {
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
 
-    // Clean up markdown fences if present
-    text = text.replace(/```html/g, '').replace(/```/g, '');
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: modelName,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.2,
+        })
+      });
 
-    return text;
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
+      }
+
+      const data = await response.json();
+      const text = data.choices[0].message.content || "";
+      return text.replace(/```html/g, '').replace(/```/g, '').trim();
+    } else {
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(systemPrompt + "\n\nUser Prompt: " + prompt);
+      const response = await result.response;
+      const text = response.text();
+      return text.replace(/```html/g, '').replace(/```/g, '').trim();
+    }
   } catch (error) {
-    console.error("Gemini generation error:", error);
-    throw new Error("Failed to generate code with Gemini");
+    console.error("AI generation error:", error);
+    throw error;
   }
 }

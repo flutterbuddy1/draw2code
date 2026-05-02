@@ -44,7 +44,11 @@ export async function POST(req: Request) {
         });
 
         return NextResponse.json({ success: true, code: savedCode });
-    } catch {
-        return NextResponse.json({ error: 'Failed to generate app' }, { status: 500 });
+    } catch (error: unknown) {
+        console.error('Generation Error:', error);
+        return NextResponse.json({ 
+            error: 'Failed to generate app', 
+            details: error instanceof Error ? error.message : 'Unknown error' 
+        }, { status: 500 });
     }
 }
